@@ -3,7 +3,7 @@
 %  =========================================================================
 %  Peneliti : Galih Nugraha Nurkahfi
 %  Institusi: PR Telekomunikasi, BRIN
-%  Versi    : 8.0-TB | Script: JCAS_OFDM_Multistatic_Core_TB.m
+%  Versi    : 9.0-TB | Script: JCAS_OFDM_Multistatic_Core_TB.m
 %
 %  PERUBAHAN DARI v5.0:
 %  ┌---------------------------------------------------------------------┐
@@ -2937,22 +2937,23 @@ if cfg.export.csv
         fprintf(fdbg, 'Strategy,rho,Cap_Mbps,Gain_pct,RMSE_m,Tput_5GAA\n');
         % Static
         gain_s = 0;
+        % best_cap_* already in Mbps (from cap_static_Mbps)
         fprintf(fdbg, 'Static,%.2f,%.4f,%.2f,%.4f,%s\n', ...
-            best_ratio_s, best_cap_s/1e6, gain_s, ...
+            best_ratio_s, best_cap_s, gain_s, ...
             RMSE_R_static(find(ratios==best_ratio_s,1)), ...
-            deal_ternary(best_cap_s/1e6>=cfg.ra.min_throughput/1e6,'PASS','FAIL'));
+            deal_ternary(best_cap_s>=cfg.ra.min_throughput/1e6,'PASS','FAIL'));
         % WaterFill
         gain_w = (best_cap_w-best_cap_s)/max(best_cap_s,1)*100;
         fprintf(fdbg, 'WaterFill,%.2f,%.4f,%.2f,%.4f,%s\n', ...
-            best_ratio_w, best_cap_w/1e6, gain_w, ...
+            best_ratio_w, best_cap_w, gain_w, ...
             RMSE_R_wf(find(ratios==best_ratio_w,1)), ...
-            deal_ternary(best_cap_w/1e6>=cfg.ra.min_throughput/1e6,'PASS','FAIL'));
+            deal_ternary(best_cap_w>=cfg.ra.min_throughput/1e6,'PASS','FAIL'));
         % Adaptive
         gain_a = (best_cap_a-best_cap_s)/max(best_cap_s,1)*100;
         fprintf(fdbg, 'Adaptive,%.2f,%.4f,%.2f,%.4f,%s\n', ...
-            best_ratio_a, best_cap_a/1e6, gain_a, ...
+            best_ratio_a, best_cap_a, gain_a, ...
             RMSE_R_adapt(find(ratios==best_ratio_a,1)), ...
-            deal_ternary(best_cap_a/1e6>=cfg.ra.min_throughput/1e6,'PASS','FAIL'));
+            deal_ternary(best_cap_a>=cfg.ra.min_throughput/1e6,'PASS','FAIL'));
         % RL strategies
         if cfg.enable.fase4
             for ai=1:n_algos
@@ -2989,8 +2990,8 @@ if cfg.export.csv
             deal_ternary(Pd_arr(snr_op_idx_dbg)>=0.95,'PASS','FAIL'));
         fprintf(fdbg, 'Pfa_pct,%.4f,<=1.0,%s\n', Pfa_arr_emp(snr_op_idx_dbg)*100, ...
             deal_ternary(Pfa_arr_emp(snr_op_idx_dbg)<=0.01,'PASS','FAIL'));
-        fprintf(fdbg, 'Throughput_Mbps,%.4f,>=0.2,%s\n', best_cap_s/1e6, ...
-            deal_ternary(best_cap_s/1e6>=0.2,'PASS','FAIL'));
+        fprintf(fdbg, 'Throughput_Mbps,%.4f,>=0.2,%s\n', best_cap_s, ...
+            deal_ternary(best_cap_s>=0.2,'PASS','FAIL'));
         fprintf(fdbg, 'EKF_RMSE_mean_m,%.4f,<=1.5,%s\n', mean(rmse_kalm_all), ...
             deal_ternary(mean(rmse_kalm_all)<=1.5,'PASS','FAIL'));
         fprintf(fdbg, 'SI_after_dBc,%.1f,<=-20.0,%s\n', SI_dBc_after, ...
@@ -3006,12 +3007,12 @@ if cfg.export.csv
         fprintf(fdbg, 'SNR_ra_lin=%.4f\n', SNR_ra_lin);
         fprintf(fdbg, 'noise_var=%.6e\n', noise_var);
         fprintf(fdbg, 'sig_pow=%.6e\n', sig_pow);
-        fprintf(fdbg, 'best_cap_s_bps=%.2f\n', best_cap_s);
-        fprintf(fdbg, 'best_cap_w_bps=%.2f\n', best_cap_w);
-        fprintf(fdbg, 'best_cap_a_bps=%.2f\n', best_cap_a);
+        fprintf(fdbg, 'best_cap_s_Mbps=%.4f\n', best_cap_s);
+        fprintf(fdbg, 'best_cap_w_Mbps=%.4f\n', best_cap_w);
+        fprintf(fdbg, 'best_cap_a_Mbps=%.4f\n', best_cap_a);
         if cfg.enable.fase4
             for ai=1:n_algos
-                fprintf(fdbg, 'best_cap_rl_%s_bps=%.2f\n', ...
+                fprintf(fdbg, 'best_cap_rl_%s_Mbps=%.4f\n', ...
                     run_algos{ai}, best_cap_rl(ai));
             end
         end
@@ -3352,7 +3353,7 @@ saa_rmse       = 1.5;   % [m]   range accuracy SLR
 saa_speed_acc  = 0.3;   % [m/s]
 
 fprintf('\n=========================================================\n');
-fprintf('  FINAL SUMMARY — JCAS v8.0 (Toolbox Integration)\n');
+fprintf('  FINAL SUMMARY — JCAS v9.0 (Toolbox Integration)\n');
 fprintf('=========================================================\n');
 fprintf(' Scenario  : %s | %d nodes | fc=%.1f GHz | BW=%.0f MHz\n', ...
     cfg.v2x.mobility_model, Nt, cfg.fc/1e9, cfg.BW/1e6);
@@ -3427,9 +3428,9 @@ if cfg.enable.fase4
         'Strategy','Nc/Nsc','Cap[Mbps]','vsStatic','RMSE[m]','5GAA');
     for mi_s=1:length(all_n_s)
         g_s  = (all_c_s(mi_s)-best_cap_s)/max(best_cap_s,eps)*100;
-        pf_s = deal_ternary(all_c_s(mi_s)/1e6>=saa_tput,'PASS','FAIL');
+        pf_s = deal_ternary(all_c_s(mi_s)>=saa_tput,'PASS','FAIL');
         fprintf('  %-16s %7.2f %12.3f %+10.1f%% %12.3f %8s\n', ...
-            all_n_s{mi_s}, all_r_s(mi_s), all_c_s(mi_s)/1e6, g_s, rmse_strats(mi_s), pf_s);
+            all_n_s{mi_s}, all_r_s(mi_s), all_c_s(mi_s), g_s, rmse_strats(mi_s), pf_s);
     end
     fprintf('  RL convergence (last 500 ep):\n');
     for ai_s=1:n_algos
@@ -3512,24 +3513,34 @@ end
 
 function det_mask = cfar2d_tb(cfar_obj, rd_mag)
 % [TOOLBOX] Wrapper: phased.CFARDetector2D → logical mask (same size as rd_mag)
-% phased.CFARDetector2D returns linear detection indices.
+% Correct usage: CFARDetector2D takes 2D power matrix, returns 2D logical mask.
     [Nr, Nc_rd] = size(rd_mag);
     det_mask = false(Nr, Nc_rd);
-    % Flatten input: detector works on column vector of cells
-    % Input must be double; use magnitude squared for CFAR power input
-    rd_pow = double(rd_mag).^2;
-    % Candidate cells: all cells (detector handles guard+training internally)
-    cut_idx = (1:Nr*Nc_rd)';
+    rd_pow = double(rd_mag).^2;  % power input
     try
-        det_idx = cfar_obj(rd_pow(:), cut_idx);
-        if ~isempty(det_idx)
-            det_mask(det_idx) = true;
+        % phased.CFARDetector2D: input is (Nr x Nc) power matrix
+        % Returns logical matrix of same size
+        det_mask = step(cfar_obj, rd_pow);
+    catch me_cfar
+        % Fallback to manual CA-CFAR if toolbox call fails
+        % (e.g. matrix too small for guard+training window)
+        G = cfar_obj.GuardBandSize(1);
+        T = cfar_obj.TrainingBandSize(1);
+        Pfa_fb = cfar_obj.ProbabilityFalseAlarm;
+        win = T + G;
+        N_train = (2*T+1)^2 - (2*G+1)^2;
+        N_train = max(N_train, 4);
+        alpha_fb = N_train * (Pfa_fb^(-1/N_train) - 1);
+        for r = win+1:Nr-win
+            for c = win+1:Nc_rd-win
+                outer = rd_pow(r-win:r+win, c-win:c+win);
+                inner = rd_pow(r-G:r+G, c-G:c+G);
+                noise_est = (sum(outer(:))-sum(inner(:))) / N_train;
+                if rd_pow(r,c) > alpha_fb * noise_est
+                    det_mask(r,c) = true;
+                end
+            end
         end
-    catch
-        % Fallback: if phased.CFARDetector2D fails (e.g. size too small),
-        % use simple threshold at mean + 3*std
-        thr = mean(rd_mag(:)) + 3*std(rd_mag(:));
-        det_mask = rd_mag > thr;
     end
 end
 
@@ -3562,12 +3573,11 @@ function reward = compute_rl_reward_v2(cap_val,cap_max,rmse_val,rmse_worst,...
     q_sense = 1-min(rmse_val/max(rmse_worst,0.01),1);
     pd_bonus = max(0, pd_val);  % Pd contribution
 
-    % [FIX v7] Penalty recalibrated for EKF RMSE scale (0-5m)
-    if ~isfinite(rmse_val)||rmse_val>5.0; penalty=4;
-    elseif rmse_val>3.0; penalty=1.5;
-    elseif rmse_val>1.5; penalty=0.5;
-    else; penalty=0; end
-    if r_cap<min_cap_norm; penalty=penalty+2; end
+    % [FIX v9] RMSE penalty removed — already encoded in q_sense.
+    % Only throughput floor penalty remains to avoid degenerate comm=0 policies.
+    penalty = 0;
+    if r_cap < min_cap_norm; penalty = 3; end
+    if ~isfinite(rmse_val); penalty = penalty + 1; end
 
     reward = w_comm*r_cap + w_sense*q_sense + w_detect*pd_bonus - penalty;
 end
