@@ -261,9 +261,10 @@ if any(~isnan(gm(:)))
     gm_plot(isnan(gm_plot)) = 0;
     b9 = bar(gm_plot, 0.75, 'grouped');
     den_colors = [0.2 0.5 0.8; 0.4 0.7 0.3; 0.85 0.33 0.1];
+    den_names = {'Low','Medium','High'};
     for k=1:3
         b9(k).FaceColor = den_colors(k,:);
-        b9(k).DisplayName = {'Low','Medium','High'}{k};
+        b9(k).DisplayName = den_names{k};
     end
     hold on;
     % 5GAA throughput SLR line
