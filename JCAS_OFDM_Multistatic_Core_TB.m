@@ -3492,21 +3492,76 @@ function rx_grid = demod_ofdm(rx_sig, Nsc, Nsym, Ncp, Lsym)
 end
 
 % cfar_2d: legacy implementation (kept as fallback only)
-function [det_mask, thresh_map] = cfar_2d(rd_mag, G, T, Pfa)
-    [Nr,Nc_rd] = size(rd_mag);
-    det_mask   = false(Nr,Nc_rd);
-    thresh_map = zeros(Nr,Nc_rd);
-    win  = T+G;
-    N_train = (2*T+1)^2-(2*G+1)^2;
-    N_train = max(N_train,4);
-    alpha   = N_train*(Pfa^(-1/N_train)-1);
-    for r = win+1:Nr-win
-        for c = win+1:Nc_rd-win
-            outer = rd_mag(r-win:r+win, c-win:c+win);
-            inner = rd_mag(r-G:r+G,     c-G:c+G);
-            noise_est = (sum(outer(:))-sum(inner(:)))/N_train;
-            thresh_map(r,c) = alpha*noise_est;
-            if rd_mag(r,c) > thresh_map(r,c); det_mask(r,c)=true; end
+function [det_mask, thresh_map] = cfar_2d(rd_mag, G, T, Pfa, method, os_frac)
+%CFAR_2D  Edge-aware 2D CFAR (CA or OS) with NO dead zone.
+%  Drop-in replacement for the original cfar_2d (JCAS_OFDM_Multistatic_Core_TB.m,
+%  function at ~line 3495). Backward compatible: called with 4 args it behaves
+%  as edge-aware CA-CFAR.
+%
+%  WHY THIS FIX (answers reviewer point on Pd = 0%):
+%  The original version looped only over  r = win+1 : Nr-win  (win = T+G = 10),
+%  so the outer 10-cell border of the 64x64 range-Doppler map was never tested.
+%  Targets whose range/Doppler bin fell in that border could never be declared,
+%  giving detection probability Pd = 0. This version tests EVERY cell and clips
+%  the training window to the map bounds at the edges, removing the dead zone.
+%  The optional OS (ordered-statistic) mode additionally resists target masking
+%  in dense multi-target scenes, where the CA mean is inflated by neighbouring
+%  targets sharing the training window (a known CA-CFAR weakness in multistatic
+%  geometries with iso-range ellipse crowding).
+%
+%  INPUTS
+%    rd_mag : |range-Doppler map| (magnitude), size [Nr x Nc]
+%    G      : guard cells (per side)      -> cfg.cfar.guard_cells
+%    T      : training cells (per side)   -> cfg.cfar.train_cells
+%    Pfa    : design false-alarm prob.    -> cfg.cfar.Pfa
+%    method : 'CA' (default) or 'OS'      -> cfg.cfar.method
+%    os_frac: OS rank fraction, default 0.75 (ignored for CA) -> cfg.cfar.os_frac
+%
+%  NOTE ON OS-CFAR SCALING: the exact threshold factor for a target Pfa in
+%  OS-CFAR follows Rohling (1983) and differs from the CA factor. Here we reuse
+%  the CA factor with the k-th order statistic, which is slightly conservative
+%  (fewer false alarms) and robust; if you need the Pfa held exactly, calibrate
+%  alpha_os once by a short noise-only Monte-Carlo run and store it in cfg.
+
+    if nargin < 5 || isempty(method);  method  = 'CA';  end
+    if nargin < 6 || isempty(os_frac); os_frac = 0.75;  end
+
+    [Nr, Nc]   = size(rd_mag);
+    det_mask   = false(Nr, Nc);
+    thresh_map = zeros(Nr, Nc);
+    W = T + G;                          % half-extent of the outer window
+
+    for r = 1:Nr
+        for c = 1:Nc
+            % outer (training + guard) window, clipped to the map
+            r1 = max(1, r-W);  r2 = min(Nr, r+W);
+            c1 = max(1, c-W);  c2 = min(Nc, c+W);
+            % guard window, clipped to the map
+            gr1 = max(1, r-G); gr2 = min(Nr, r+G);
+            gc1 = max(1, c-G); gc2 = min(Nc, c+G);
+
+            outer = rd_mag(r1:r2, c1:c2);
+            keep  = true(size(outer));                       % training-cell mask
+            keep((gr1-r1+1):(gr2-r1+1), (gc1-c1+1):(gc2-c1+1)) = false;  % drop guard+CUT
+            train = outer(keep);
+            N_train = numel(train);
+            if N_train < 4;  continue;  end                  % too few cells to estimate
+
+            alpha = N_train * (Pfa^(-1/N_train) - 1);         % per-cell factor
+
+            switch upper(method)
+                case 'OS'
+                    ts = sort(train);
+                    k  = max(1, min(N_train, round(os_frac * N_train)));
+                    noise_est = ts(k);                        % ordered statistic
+                otherwise
+                    noise_est = mean(train);                  % cell averaging
+            end
+
+            thresh_map(r,c) = alpha * noise_est;
+            if rd_mag(r,c) > thresh_map(r,c)
+                det_mask(r,c) = true;
+            end
         end
     end
 end
