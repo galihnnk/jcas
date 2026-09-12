@@ -152,6 +152,8 @@ cfg.hw.phase_noise_dBc  = -80;
 cfg.cfar.Pfa            = 1e-3;
 cfg.cfar.guard_cells    = 2;
 cfg.cfar.train_cells    = 8;
+cfg.cfar.method         = 'OS';    % [PATCH] 'CA' atau 'OS' (OS lebih tahan masking)
+cfg.cfar.os_frac        = 0.75;    % [PATCH] rank fraction OS-CFAR
 cfg.window.type         = 'chebyshev';
 cfg.window.cheby_att    = 60;
 
@@ -735,7 +737,7 @@ if cfg.enable.fase3
     RD_win_norm = RD_win_norm - max(RD_win_norm(:));
 
     [cfar_mask, ~] = cfar_2d(abs(RD_map_win), ...
-        cfg.cfar.guard_cells, cfg.cfar.train_cells, cfg.cfar.Pfa);
+        cfg.cfar.guard_cells, cfg.cfar.train_cells, cfg.cfar.Pfa, cfg.cfar.method, cfg.cfar.os_frac);
     n_detected = sum(cfar_mask(:));
     range_profile_win = mean(abs(ifft(H_windowed,Nsc,1)),2);
     fprintf('   Sensor1 CFAR: %d deteksi (Pfa=%.0e, window=%s)\n', ...
@@ -763,7 +765,7 @@ if n_sensors > 1 && cfg.enable.fase3
         H_win_si = H_sensing_extra{si} .* (win_r*win_v);
         RD_map_extra{si} = fftshift(fft(ifft(H_win_si,Nsc,1),Nsym,2),2);
         [cfar_mask_extra{si}, ~] = cfar_2d(abs(RD_map_extra{si}), ...
-            cfg.cfar.guard_cells, cfg.cfar.train_cells, cfg.cfar.Pfa);
+            cfg.cfar.guard_cells, cfg.cfar.train_cells, cfg.cfar.Pfa, cfg.cfar.method, cfg.cfar.os_frac);
         range_profile_extra{si} = mean(abs(ifft(H_win_si,Nsc,1)),2);
         fprintf('   Sensor%d (%s) CFAR: %d deteksi\n', ...
             si, sensor(si).type, sum(cfar_mask_extra{si}(:)));
@@ -1176,6 +1178,85 @@ if cfg.enable.fase4
     rmse_worst   = max(precomp_rmse(isfinite(precomp_rmse(:))));
     min_cap_norm = cfg.ra.min_throughput/1e6/max(cap_max_pre,eps);
 
+%% ==================================================================
+%%  REWARD SENSITIVITY ANALYSIS
+%%  Sisipkan blok ini SETELAH tabel precomp dibangun dan
+%%  cap_max_pre / rmse_worst / min_cap_norm sudah terdefinisi
+%%  (di JCAS_OFDM_Multistatic_Core_TB.m, setelah ~baris 1176).
+%%
+%%  Tujuan (menjawab reviewer: bobot 0.4/0.4/0.2 terlihat arbitrer):
+%%  Menunjukkan bahwa rasio alokasi optimal rho* ROBUST terhadap
+%%  pilihan bobot reward. Memakai pemetaan reward-vs-aksi yang sudah
+%%  deterministik (precomp_cap/rmse/pd) + fungsi compute_rl_reward_v2,
+%%  jadi TIDAK perlu melatih ulang RL.
+%% ==================================================================
+do_reward_sensitivity = true;
+if do_reward_sensitivity
+
+    % pemetaan indeks aksi -> rasio alokasi rho (sama dg precompute loop)
+    rho_of_action = ratios(1:cfg.rl.n_actions);   % [PATCH] pemetaan aksi->rho asli (cfg.ra.ratios_sweep)
+
+    % --- state yang dievaluasi: pakai state primary (medium density) ---
+    % Set sesuai state utama makalah; default: state tengah sebagai wakil.
+    if exist('state_current','var'); s_eval = state_current;
+    else;                            s_eval = round(cfg.rl.n_states/2);
+    end
+
+    % --- grid bobot pada simpleks (w_comm, w_sense); w_detect = sisanya ---
+    wc_grid = 0.1:0.1:0.8;
+    ws_grid = 0.1:0.1:0.8;
+
+    rho_star  = nan(numel(wc_grid), numel(ws_grid));
+    cap_star  = nan(numel(wc_grid), numel(ws_grid));
+    rmse_star = nan(numel(wc_grid), numel(ws_grid));
+
+    for iw = 1:numel(wc_grid)
+        for jw = 1:numel(ws_grid)
+            wc = wc_grid(iw);  ws = ws_grid(jw);  wd = 1 - wc - ws;
+            if wd < 0 || wd > 1;  continue;  end          % jaga tetap di simpleks
+            rvec = zeros(1, cfg.rl.n_actions);
+            for a = 1:cfg.rl.n_actions
+                rvec(a) = compute_rl_reward_v2( ...
+                    precomp_cap(s_eval,a), cap_max_pre, ...
+                    precomp_rmse(s_eval,a), rmse_worst, min_cap_norm, ...
+                    precomp_pd(s_eval,a), wc, ws, wd);
+            end
+            [~, a_best] = max(rvec);
+            rho_star(iw,jw)  = rho_of_action(a_best);
+            cap_star(iw,jw)  = precomp_cap(s_eval, a_best);
+            rmse_star(iw,jw) = precomp_rmse(s_eval, a_best);
+        end
+    end
+
+    % --- ringkasan numerik (untuk teks makalah) ---
+    fprintf('\n[Reward Sensitivity] state %d\n', s_eval);
+    fprintf('  rho* : min=%.2f  max=%.2f  median=%.2f  std=%.3f (across %d weight settings)\n', ...
+        min(rho_star(:),[],'omitnan'), max(rho_star(:),[],'omitnan'), ...
+        median(rho_star(:),'omitnan'), std(rho_star(:),'omitnan'), sum(~isnan(rho_star(:))));
+    % fraksi konfigurasi bobot yang tetap memilih rasio sensing-heavy (rho<=0.5)
+    frac_sensing_heavy = mean(rho_star(~isnan(rho_star)) <= 0.5);
+    fprintf('  fraksi bobot yang memilih rho<=0.5 (sensing-heavy): %.0f%%\n', 100*frac_sensing_heavy);
+
+    % --- tabel + heatmap + CSV untuk makalah ---
+    try
+        T_rho = array2table(rho_star, ...
+            'VariableNames', matlab.lang.makeValidName(compose('ws_%.1f', ws_grid)), ...
+            'RowNames',      matlab.lang.makeValidName(compose('wc_%.1f', wc_grid)));
+        disp(T_rho);
+    catch; disp(rho_star); end
+
+    figure('Name','Reward Sensitivity','Color','w');
+    imagesc(ws_grid, wc_grid, rho_star); axis xy; colorbar;
+    xlabel('w_{sense}'); ylabel('w_{comm}');
+    title('Optimal allocation ratio \rho^* vs reward weights');
+
+    writematrix(rho_star,  'reward_sensitivity_rho_star.csv');
+    writematrix(cap_star,  'reward_sensitivity_cap_star.csv');
+    writematrix(rmse_star, 'reward_sensitivity_rmse_star.csv');
+    fprintf('  [saved] reward_sensitivity_{rho,cap,rmse}_star.csv\n');
+end
+
+
     % [NEW] Enhanced reward function dengan detection probability
     compute_reward_v2 = @(s,a) compute_rl_reward_v2( ...
         precomp_cap(s,a), cap_max_pre, ...
@@ -1417,7 +1498,7 @@ for si = 1:N_snr
                     R_k_si = target.R_true(k);
                 end
                 [cfar_mc2, ~] = cfar_2d(abs(RD_per_sensor_mc{si_mc}), ...
-                    cfg.cfar.guard_cells, cfg.cfar.train_cells, cfg.cfar.Pfa);
+                    cfg.cfar.guard_cells, cfg.cfar.train_cells, cfg.cfar.Pfa, cfg.cfar.method, cfg.cfar.os_frac);
                 ir_k2 = min(round(R_k_si/delta_R)+1, Nsc);
                 dx_si3=target.x(k)-sensor(si_mc).x; dy_si3=target.y(k)-sensor(si_mc).y;
                 v_rad_si3=target.v_true(k)*cos(atan2(dy_si3,dx_si3));
@@ -1443,7 +1524,7 @@ for si = 1:N_snr
 
         % -- [FIX v7] False alarm: sensor-1, exclude target windows --
         [cfar_s1_mc, ~] = cfar_2d(abs(RD_per_sensor_mc{1}), ...
-            cfg.cfar.guard_cells, cfg.cfar.train_cells, cfg.cfar.Pfa);
+            cfg.cfar.guard_cells, cfg.cfar.train_cells, cfg.cfar.Pfa, cfg.cfar.method, cfg.cfar.os_frac);
         fa_mask_mc = cfar_s1_mc;
         for k=1:Nt
             ir_fa=min(round(target.R_true(k)/delta_R)+1,Nsc);
