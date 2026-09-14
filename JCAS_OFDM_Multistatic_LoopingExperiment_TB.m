@@ -94,15 +94,16 @@ for ei = 1:n_exp
     % Override cfg before running base script
     % The base script reads cfg from workspace if 'loop_override' is true
     % ------------------------------------------------------------------
-    loop_override       = true;
-    loop_BW             = bw_hz;
-    loop_Nnodes         = n_nodes;
-    loop_mode           = topo_mode;
-    loop_SNR_dB         = snr_op;
-    loop_obu_idx        = obu_idx;
-    loop_export_suffix  = ['_' exp_label];
-    loop_export_figures = false;
-    loop_export_csv     = true;
+    loop_override        = true;
+    loop_BW              = bw_hz;
+    loop_Nnodes          = n_nodes;
+    loop_mode            = topo_mode;
+    loop_SNR_dB          = snr_op;
+    loop_obu_idx         = obu_idx;
+    loop_export_suffix   = ['_' exp_label];
+    loop_export_figures  = (ei == primary_ei);   % [PATCH] figure hanya konfigurasi primary
+    loop_export_csv      = true;
+    loop_run_sensitivity = (ei == primary_ei);   % [PATCH] reward sensitivity hanya primary
 
     % Save runner variables that must survive run()
     sv_ei        = ei;
