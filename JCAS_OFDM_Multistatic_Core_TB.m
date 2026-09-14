@@ -1190,7 +1190,7 @@ if cfg.enable.fase4
 %%  deterministik (precomp_cap/rmse/pd) + fungsi compute_rl_reward_v2,
 %%  jadi TIDAK perlu melatih ulang RL.
 %% ==================================================================
-do_reward_sensitivity = ~loop_override;   % [PATCH] jalankan hanya saat standalone (bukan saat looping)
+do_reward_sensitivity = (~loop_override) || (exist('loop_run_sensitivity','var') && loop_run_sensitivity);   % [PATCH] standalone, atau saat looping meminta (konfigurasi primary)
 if do_reward_sensitivity
 
     % pemetaan indeks aksi -> rasio alokasi rho (sama dg precompute loop)
