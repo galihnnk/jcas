@@ -1,7 +1,9 @@
 %% JCAS_GeneratePubFigs.m
-%  Generate all 10 publication figures from CSV output files.
+%  Generate publication figures from CSV output files.
 %  Compatible with JCAS_OFDM_Multistatic_Core_TB.m output.
-%  Galih Nugraha Nurkahfi -- PR Telekomunikasi, BRIN -- v2.0
+%  Galih Nugraha Nurkahfi -- PR Telekomunikasi, BRIN -- v2.1
+%  v2.1: PubFig6 (Bootstrap CI) DIHAPUS -- analisis bootstrap lama cacat
+%        (dispersi identik semua strategi). Jangan dipakai di paper.
 
 clear; clc; close all;
 
@@ -21,14 +23,13 @@ colors=[C.static;C.wf;C.adapt;C.ql;C.sarsa;C.bandit];
 strat_names={'Static','Water-Fill','Adaptive','Q-Learning','SARSA','Greedy Bandit'};
 markers={'o','s','^','d','v','p'};
 
-fprintf('\n=== JCAS Publication Figure Generator v2.0 ===\n\n');
+fprintf('\n=== JCAS Publication Figure Generator v2.1 ===\n\n');
 
-%% ── PubFig2: Capacity bar chart ──────────────────────────────────────────
+%% -- PubFig2: Capacity bar chart -------------------------------------------
 T1 = jcas_load(csv_dir,1,primary_sfx);
 if ~isempty(T1) && ismember('Cap_Mbps',T1.Properties.VariableNames)
     fh=figure('Units','centimeters','Position',[2 2 18 11],'Color','w');
     cap=T1.Cap_Mbps; n=min(length(cap),6);
-    % Abbreviated labels so x-axis font can be large
     abbr = {'Static','WF','Adapt','Q-L','SARSA','Bandit'};
     b=bar(cap(1:n),0.65,'FaceColor','flat');
     for k=1:n; b.CData(k,:)=colors(k,:); end
@@ -38,14 +39,13 @@ if ~isempty(T1) && ismember('Cap_Mbps',T1.Properties.VariableNames)
     ax=gca; ax.XAxis.FontSize=13; ax.YAxis.FontSize=12;
     xlabel('Strategy','FontSize',13);
     ylabel('Capacity (Mbps)','FontSize',13);
-    title('Spectral Efficiency per Strategy — Primary Scenario (6 nodes, 20 MHz, Mode C)',...
+    title('Spectral Efficiency per Strategy -- Primary Scenario (6 nodes, 20 MHz, Mode C)',...
           'FontWeight','normal','FontSize',11);
     for k=1:n
         text(k,cap(k)+max(cap)*0.02,sprintf('%.1f',cap(k)),...
              'HorizontalAlignment','center','FontSize',11,...
              'FontWeight','bold','Color',colors(k,:));
     end
-    % Legend with full names
     leg_h = gobjects(n,1);
     for k=1:n
         leg_h(k)=bar(nan,nan,'FaceColor',colors(k,:),'DisplayName',strat_names{k});
@@ -55,7 +55,7 @@ if ~isempty(T1) && ismember('Cap_Mbps',T1.Properties.VariableNames)
     jcas_export(fh,out_dir,'PubFig2_BarKPI');
 end
 
-%% ── PubFig1: Pareto frontier ─────────────────────────────────────────────
+%% -- PubFig1: Pareto frontier ----------------------------------------------
 T2 = jcas_load(csv_dir,2,primary_sfx);
 if ~isempty(T2) && ismember('Cap_Mbps',T2.Properties.VariableNames)
     fh=figure('Units','centimeters','Position',[2 2 18 11],'Color','w'); hold on;
@@ -74,11 +74,9 @@ if ~isempty(T2) && ismember('Cap_Mbps',T2.Properties.VariableNames)
         end
     end
     xline(1.5,'--','Color',C.pass,'LineWidth',1.5,'Label','5GAA RMSE 1.5 m');
-    % Auto-fit x-axis to actual data range (no empty canvas)
     all_rm = T2.RMSE_m(isfinite(T2.RMSE_m));
     x_lo = max(0, min(all_rm)*0.85);
     x_hi = max(all_rm)*1.1;
-    % Only use log scale if range spans more than one decade
     if x_hi/max(x_lo,0.01) > 10
         set(gca,'XScale','log');
     else
@@ -87,16 +85,14 @@ if ~isempty(T2) && ismember('Cap_Mbps',T2.Properties.VariableNames)
     end
     xlabel('EKF RMSE (m)','FontSize',12);
     ylabel('Capacity (Mbps)','FontSize',12);
-    title('Communication-Sensing Pareto Frontier — Primary Scenario',...
+    title('Communication-Sensing Pareto Frontier -- Primary Scenario',...
           'FontWeight','normal','FontSize',11);
     legend(hh,'Location','northwest','FontSize',9,'NumColumns',2);
     grid on; box on;
     jcas_export(fh,out_dir,'PubFig1_Pareto');
 end
 
-%% ── PubFig3: Pd vs SNR ───────────────────────────────────────────────────
-% CSV03 columns: SNR_dB, Pd_pct, MissedDet_pct, BER, BER_QPSK_theory,
-%                BER_16QAM_theory, Pfa_emp_pct, Pd_5GAA, Pfa_5GAA
+%% -- PubFig3: Pd vs SNR ----------------------------------------------------
 scen3={primary_sfx,'Primary 6-node'; '','8-node standalone';
     '_BWsweep_BW10MHz_6nodes_ModeC','10MHz';
     '_BWsweep_BW40MHz_6nodes_ModeC','40MHz';
@@ -115,14 +111,13 @@ for si=1:size(scen3,1)
 end
 yline(95,'--r','LineWidth',2,'Label','5GAA: Pd \geq 95%');
 xlabel('SNR (dB)'); ylabel('Detection Probability P_d (%)');
-title('Detection Probability vs. SNR — All Scenarios','FontWeight','normal');
+title('Detection Probability vs. SNR -- All Scenarios','FontWeight','normal');
 ylim([0 110]); xlim([-6 26]); grid on; box on;
 vld=arrayfun(@(x)isvalid(x)&&~strcmp(x.Type,'hggroup'),hh3);
 if any(vld); legend(hh3(vld),'Location','northwest','FontSize',7,'NumColumns',2); end
 jcas_export(fh,out_dir,'PubFig3_PdBER_vs_SNR');
 
-%% ── PubFig4: BW Comparison ───────────────────────────────────────────────
-% CSV05 columns: BW_MHz, Nsc, RangeRes_m, CRB_m, RMSE_approx_m, Pass_5GAA
+%% -- PubFig4: BW Comparison ------------------------------------------------
 bw4={primary_sfx,'Primary 6-node'; '','8-node standalone';
     '_Density_BW20MHz_4nodes_ModeC','4-node';
     '_Density_BW20MHz_10nodes_ModeC','10-node';
@@ -145,8 +140,7 @@ vld4=arrayfun(@(x)isvalid(x)&&~strcmp(x.Type,'hggroup'),hh4);
 if any(vld4); legend(hh4(vld4),'Location','northeast','FontSize',8); end
 jcas_export(fh,out_dir,'PubFig4_BW_Comparison');
 
-%% ── PubFig5: RL Convergence ──────────────────────────────────────────────
-% CSV09 columns: Episode, Q-Learning_mavg, SARSA_mavg, Greedy Bandit_mavg
+%% -- PubFig5: RL Convergence -----------------------------------------------
 T9=jcas_load(csv_dir,9,primary_sfx);
 if ~isempty(T9)
     cols9=T9.Properties.VariableNames;
@@ -159,62 +153,13 @@ if ~isempty(T9)
              'LineWidth',1.5,'DisplayName',dlbl);
     end
     xlabel('Episode'); ylabel('Mean Reward (100-ep MA)');
-    title('RL Convergence — Primary Scenario','FontWeight','normal');
+    title('RL Convergence -- Primary Scenario','FontWeight','normal');
     legend('Location','southeast','FontSize',9);
     xlim([0 max(ep)]); grid on; box on;
     jcas_export(fh,out_dir,'PubFig5_RL_Convergence');
 end
 
-%% ── PubFig6: Bootstrap CI ────────────────────────────────────────────────
-% Corrected values: mean per-strategy from primary scenario results.
-% Std = 16.09 Mbps (channel variability, same for all strategies).
-% CI width: low_diff = 33.67, high_diff = 29.49 (BCa asymmetric).
-% Note: CI width is identical across strategies (shared channel ensemble)
-%       but CI position differs because each strategy has a different mean.
-boot_names  = {'Static','Water-Filling','Adaptive','Q-Learning','SARSA','Greedy Bandit'};
-boot_means  = [103.93, 108.13, 108.13,  77.21,  27.76,  88.35];
-boot_ci_low = [ 70.26,  74.46,  74.46,  43.54,   0.00,  54.68];
-boot_ci_hi  = [133.42, 137.62, 137.62, 106.70,  57.25, 117.84];
-boot_std    = 16.09;  % same for all — channel variability
-
-fh=figure('Units','centimeters','Position',[2 2 18 11],'Color','w'); hold on;
-n7 = numel(boot_means);
-for k=1:n7
-    col = colors(k,:);
-    mn  = boot_means(k);
-    cil = boot_ci_low(k);
-    cih = boot_ci_hi(k);
-    % CI bar
-    plot([k k],[cil cih],'-','Color',col,'LineWidth',3);
-    plot([k-0.15 k+0.15],[cil cil],'-','Color',col,'LineWidth',2);
-    plot([k-0.15 k+0.15],[cih cih],'-','Color',col,'LineWidth',2);
-    % Mean marker
-    scatter(k,mn,70,col,'d','filled');
-    % Mean label
-    text(k,cih+4,sprintf('%.1f',mn),'HorizontalAlignment','center',...
-         'FontSize',9,'FontWeight','bold','Color',col);
-end
-% 5GAA SLR reference
-yline(0.2,'--k','LineWidth',1.5,'Label','5GAA SLR','LabelHorizontalAlignment','left');
-xticks(1:n7);
-xticklabels({'ST','WF','AD','Q-L','SARSA','Bandit'});
-ax=gca; ax.XAxis.FontSize=11;
-xlabel('Strategy','FontSize',12); ylabel('Capacity (Mbps)','FontSize',12);
-title('Bootstrap 95\% CI (BCa, n=1000) — Primary Scenario',...
-      'FontWeight','normal','FontSize',11);
-% Legend with full names
-leg_h = gobjects(n7,1);
-for k=1:n7
-    leg_h(k)=scatter(nan,nan,40,colors(k,:),'d','filled','DisplayName',boot_names{k});
-end
-legend(leg_h,'Location','northwest','FontSize',8,'NumColumns',2);
-text(0.02,0.05,'Note: CI width identical (shared channel); position shifts with strategy mean',...
-     'Units','normalized','FontSize',7,'Color',[0.5 0.5 0.5],'FontAngle','italic');
-ylim([0 max(boot_ci_hi)*1.15]); grid on; box on;
-jcas_export(fh,out_dir,'PubFig6_Bootstrap_CI');
-
-%% ── PubFig7: Sensitivity ─────────────────────────────────────────────────
-% CSV08 columns: w_c, w_s, w_d, QL_Cap_Mbps, SARSA_Cap_Mbps, Diff_Mbps, QL_Tput_5GAA
+%% -- PubFig7: Sensitivity --------------------------------------------------
 T8=jcas_load(csv_dir,8,primary_sfx);
 if ~isempty(T8)&&ismember('QL_Cap_Mbps',T8.Properties.VariableNames)
     fh=figure('Units','centimeters','Position',[2 2 18 10],'Color','w'); hold on;
@@ -224,14 +169,13 @@ if ~isempty(T8)&&ismember('QL_Cap_Mbps',T8.Properties.VariableNames)
          'MarkerSize',6,'MarkerFaceColor',C.sarsa,'DisplayName','SARSA');
     xlabel('Communication Weight w_c  (w_s = 0.9 - w_c,  w_d = 0.1)');
     ylabel('Capacity (Mbps)');
-    title('Reward Weight Sensitivity — Primary Scenario','FontWeight','normal');
+    title('Reward Weight Sensitivity -- Primary Scenario','FontWeight','normal');
     legend('Location','northwest','FontSize',9);
     xticks(T8.w_c); grid on; box on;
     jcas_export(fh,out_dir,'PubFig7_Sensitivity_Weight');
 end
 
-%% ── PubFig8: Ablation ────────────────────────────────────────────────────
-% CSV10 columns: Configuration, QL_Cap_Mbps, Delta_vs_Full_Mbps, Delta_pct, Tput_5GAA
+%% -- PubFig8: Ablation -----------------------------------------------------
 abl8={primary_sfx,'Primary 6-node';
     '_BWsweep_BW40MHz_6nodes_ModeC','40MHz';
     '_Density_BW20MHz_10nodes_ModeC','10-node';
@@ -258,8 +202,7 @@ if any(abl_ok)
     jcas_export(fh,out_dir,'PubFig8_Ablation');
 end
 
-%% ── PubFig9: Generalization heatmap ──────────────────────────────────────
-% CSV11 columns: Scenario, Cap_Mbps, RMSE_m, Tput_5GAA, RangeRes_5GAA
+%% -- PubFig9: Generalization heatmap ---------------------------------------
 gen9={'_Primary_BW20MHz_6nodes_ModeC','Primary';
     '_Topology_BW20MHz_6nodes_ModeB','ModeB';
     '_Topology_BW20MHz_6nodes_Mono','Mono';
@@ -274,10 +217,7 @@ for ri=1:size(gen9,1)
 end
 if any(~isnan(gm(:)))
     fh=figure('Units','centimeters','Position',[2 2 18 11],'Color','w');
-    % Grouped bar: rows=config, cols=density (Low/Med/High)
-    % Transpose so bars per group = density levels
-    gm_plot = gm;
-    gm_plot(isnan(gm_plot)) = 0;
+    gm_plot = gm; gm_plot(isnan(gm_plot)) = 0;
     b9 = bar(gm_plot, 0.75, 'grouped');
     den_colors = [0.2 0.5 0.8; 0.4 0.7 0.3; 0.85 0.33 0.1];
     den_names = {'Low','Medium','High'};
@@ -286,25 +226,19 @@ if any(~isnan(gm(:)))
         b9(k).DisplayName = den_names{k};
     end
     hold on;
-    % 5GAA throughput SLR line
     yline(0.2,'--k','LineWidth',1.5,'Label','5GAA SLR 0.2 Mbps',...
           'LabelHorizontalAlignment','left');
-    % Value labels on bars
     for gi=1:size(gm_plot,1)
         for di=1:3
             if gm(gi,di)>0
-                % Get bar x position
-                nb = size(gm_plot,1);
-                bw = 0.75/3;
-                xpos = gi + (di-2)*bw;
+                nb = size(gm_plot,1); bw = 0.75/3; xpos = gi + (di-2)*bw;
                 text(xpos, gm_plot(gi,di)+3, sprintf('%.0f',gm_plot(gi,di)),...
                      'HorizontalAlignment','center','FontSize',7,...
                      'Color',den_colors(di,:));
             end
         end
     end
-    xticks(1:size(gen9,1));
-    xticklabels(gen9(:,2));
+    xticks(1:size(gen9,1)); xticklabels(gen9(:,2));
     ax=gca; ax.XAxis.FontSize=11; ax.YAxis.FontSize=11;
     xlabel('Configuration','FontSize',12);
     ylabel('Q-Learning Capacity (Mbps)','FontSize',12);
@@ -316,10 +250,8 @@ if any(~isnan(gm(:)))
     jcas_export(fh,out_dir,'PubFig9_Generalization');
 end
 
-%% ── PubFig10: Per-node RMSE ──────────────────────────────────────────────
-% CSV04 columns: Node, Type, RCS_m2, Range_m, Speed_ms, Lane,
-%                RawRMSE_m, EKFRMSE_m, EKF_Improv_pct, Pass_5GAA
-T4=jcas_load(csv_dir,4,'');  % standalone run (8 nodes)
+%% -- PubFig10: Per-node RMSE -----------------------------------------------
+T4=jcas_load(csv_dir,4,'');
 if isempty(T4)||~ismember('EKFRMSE_m',T4.Properties.VariableNames)
     T4=jcas_load(csv_dir,4,primary_sfx);
 end
@@ -353,11 +285,9 @@ end
 
 fprintf('\n=== Done. Figures saved to: %s ===\n',out_dir);
 
-%% ── LOCAL FUNCTIONS ──────────────────────────────────────────────────────────
+%% -- LOCAL FUNCTIONS -------------------------------------------------------
 
 function T = jcas_load(csv_dir, num, sfx)
-% Load a numbered CSV file, auto-detect and skip metadata header rows.
-% Header detection uses startsWith on the first-column name.
     labels={'Paper_Summary','Pareto_Sweep','Pd_vs_SNR','PerNode_RMSE',...
             'BW_Comparison','RL_Training','Statistical_Significance',...
             'Sensitivity_Analysis','Convergence','Ablation','Generalization'};
@@ -369,7 +299,6 @@ function T = jcas_load(csv_dir, num, sfx)
     if ~exist(fp,'file')
         T=table(); return;
     end
-    % Known first-column names for each CSV data header row
     first_cols={'Strategy,','SNR_dB,','BW_MHz,','Node,',...
                 'Episode,','w_c,','Configuration,','Scenario,Cap_Mbps'};
     raw=readlines(fp);
