@@ -2,14 +2,15 @@
 %  Generate publication figures from CSV output files.
 %  Compatible with JCAS_OFDM_Multistatic_Core_TB.m output.
 %  Galih Nugraha Nurkahfi -- PR Telekomunikasi, BRIN -- v2.1
-%  v2.1: PubFig6 (Bootstrap CI) DIHAPUS -- analisis bootstrap lama cacat
-%        (dispersi identik semua strategi). Jangan dipakai di paper.
+%  v2.2: PubFig6 (Bootstrap CI) dan PubFig8 (Ablation) DIHAPUS.
+%        Bootstrap lama cacat; ablation tidak berisi data / tidak dipakai di paper.
 
 clear; clc; close all;
 
 csv_dir     = 'JCAS_Results';
 out_dir     = 'figures';
 primary_sfx = '_Primary_BW20MHz_6nodes_ModeC';
+B_fig = 20e6;   % bandwidth skenario primary [Hz] untuk hitung ΔR (sesuaikan bila beda)
 
 script_dir = fileparts(mfilename('fullpath'));
 out_dir = fullfile(script_dir, out_dir);
@@ -23,7 +24,7 @@ colors=[C.static;C.wf;C.adapt;C.ql;C.sarsa;C.bandit];
 strat_names={'Static','Water-Fill','Adaptive','Q-Learning','SARSA','Greedy Bandit'};
 markers={'o','s','^','d','v','p'};
 
-fprintf('\n=== JCAS Publication Figure Generator v2.1 ===\n\n');
+fprintf('\n=== JCAS Publication Figure Generator v2.2 ===\n\n');
 
 %% -- PubFig2: Capacity bar chart -------------------------------------------
 T1 = jcas_load(csv_dir,1,primary_sfx);
@@ -63,7 +64,7 @@ if ~isempty(T2) && ismember('Cap_Mbps',T2.Properties.VariableNames)
     hh=gobjects(length(strats_u),1);
     for si=1:length(strats_u)
         idx=strcmp(T2.Strategy,strats_u{si});
-        rm=T2.RMSE_m(idx); cp=T2.Cap_Mbps(idx); col=colors(si,:);
+        rho_i=T2.Rho(idx); rm=3e8./(2*(1-rho_i)*B_fig); cp=T2.Cap_Mbps(idx); col=colors(si,:);
         if length(unique(rm))==1
             hh(si)=scatter(rm(1),cp(1),80,col,markers{si},'filled',...
                 'LineWidth',1.5,'DisplayName',strats_u{si});
@@ -73,8 +74,8 @@ if ~isempty(T2) && ismember('Cap_Mbps',T2.Properties.VariableNames)
                 'MarkerFaceColor',col,'DisplayName',strats_u{si});
         end
     end
-    xline(1.5,'--','Color',C.pass,'LineWidth',1.5,'Label','5GAA RMSE 1.5 m');
-    all_rm = T2.RMSE_m(isfinite(T2.RMSE_m));
+    xline(1.5,'--','Color',C.pass,'LineWidth',1.5,'Label','5GAA \DeltaR \leq 1.5 m');
+    all_rm = 3e8./(2*(1-T2.Rho)*B_fig); all_rm = all_rm(isfinite(all_rm));
     x_lo = max(0, min(all_rm)*0.85);
     x_hi = max(all_rm)*1.1;
     if x_hi/max(x_lo,0.01) > 10
@@ -83,9 +84,9 @@ if ~isempty(T2) && ismember('Cap_Mbps',T2.Properties.VariableNames)
         set(gca,'XScale','linear');
         xlim([x_lo x_hi]);
     end
-    xlabel('EKF RMSE (m)','FontSize',12);
+    xlabel('Range resolution \DeltaR (m)','FontSize',12);
     ylabel('Capacity (Mbps)','FontSize',12);
-    title('Communication-Sensing Pareto Frontier -- Primary Scenario',...
+    title('Communication-Sensing Frontier F(\rho) -- Primary Scenario',...
           'FontWeight','normal','FontSize',11);
     legend(hh,'Location','northwest','FontSize',9,'NumColumns',2);
     grid on; box on;
@@ -173,33 +174,6 @@ if ~isempty(T8)&&ismember('QL_Cap_Mbps',T8.Properties.VariableNames)
     legend('Location','northwest','FontSize',9);
     xticks(T8.w_c); grid on; box on;
     jcas_export(fh,out_dir,'PubFig7_Sensitivity_Weight');
-end
-
-%% -- PubFig8: Ablation -----------------------------------------------------
-abl8={primary_sfx,'Primary 6-node';
-    '_BWsweep_BW40MHz_6nodes_ModeC','40MHz';
-    '_Density_BW20MHz_10nodes_ModeC','10-node';
-    '_Topology_BW20MHz_6nodes_ModeB','ModeB'};
-abl_data=NaN(4,size(abl8,1)); abl_ok=false(1,size(abl8,1));
-for si=1:size(abl8,1)
-    Ta=jcas_load(csv_dir,10,abl8{si,1});
-    if ~isempty(Ta)&&ismember('QL_Cap_Mbps',Ta.Properties.VariableNames)&&height(Ta)>=4
-        vals=Ta.QL_Cap_Mbps(1:4);
-        if iscell(vals); vals=cellfun(@str2double,vals); end
-        abl_data(:,si)=vals; abl_ok(si)=true;
-    end
-end
-if any(abl_ok)
-    fh=figure('Units','centimeters','Position',[2 2 18 10],'Color','w');
-    b8=bar(abl_data(:,abl_ok),0.75);
-    ac=lines(sum(abl_ok));
-    for k=1:sum(abl_ok); b8(k).FaceColor=ac(k,:); end
-    xticks(1:4); xticklabels({'Full','No Detect','No Comm','No Sense'});
-    xlabel('Reward Configuration'); ylabel('Q-Learning Capacity (Mbps)');
-    title('Ablation Study: Effect of Reward Component Removal','FontWeight','normal');
-    legend(abl8(abl_ok,2),'Location','northeast','FontSize',8);
-    grid on; box on;
-    jcas_export(fh,out_dir,'PubFig8_Ablation');
 end
 
 %% -- PubFig9: Generalization heatmap ---------------------------------------
